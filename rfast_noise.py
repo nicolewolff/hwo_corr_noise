@@ -66,14 +66,9 @@ else: # otherwise snr0 is bandpass dependent
 
 # EDIT
 def gen_gp(wl_channel, amp, length, uncorr_noise):    
-    squared_exp_kernel = amp**2 * george.kernels.ExpSquaredKernel(length)
+    squared_exp_kernel = amp * george.kernels.ExpSquaredKernel(length)  # Removing amplitude squared: I think this is right?! just amplitude is my error bar, not squared...
     squared_exp_gp = george.GP(kernel=squared_exp_kernel)
     squared_exp_gp.compute(wl_channel, 0)  # error_bar "added in quadrature" to diagonal of covariance matrix doesn't work!
-    # matrix = squared_exp_gp.get_matrix(wl_channel)
-    # if get_matrix:
-    #   matrix = matrix / 1e10 # scaling back down
-    #   matrix += np.diag(np.full(wl_channel.shape, uncorr_noise**2))  # missing squared !!; if uncorr_noise is 0, this adds nothing
-
     return squared_exp_gp
 
 # generate faux spectrum, with random noise if requested
