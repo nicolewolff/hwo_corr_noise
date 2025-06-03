@@ -51,15 +51,7 @@ clr,fmin,mmrr,nwalkers,nstep,nburn,thin,restart,progress = inputs(filename_scr)
 
 covar = np.loadtxt("covariance_matrix.txt", delimiter="\t")
 covar_inv = np.linalg.inv(covar)
-# covar_inv = covar_inv - np.diag(np.diag(covar_inv))
 np.savetxt("inverse_covariance_matrix.txt", covar_inv, fmt="%.9e", delimiter="\t", header="Inverse Covariance Matrix")
-# covar_uv = np.loadtxt("uv_matrix.txt", delimiter="\t")
-# covar_vis = np.loadtxt("vis_matrix.txt", delimiter="\t")
-# covar_nir = np.loadtxt("nir_matrix.txt", delimiter="\t")
-
-# covar_inv_uv = np.linalg.inv(covar_uv)
-# covar_inv_vis = np.linalg.inv(covar_vis)
-# covar_inv_nir = np.linalg.inv(covar_nir)
 
 # unpackage parameters from user-defined routines
 tiso = tpars[0]
@@ -176,12 +168,8 @@ def lnlike(x):
        p10,fp10,src,threeD,fntmp,skptmp,colt,colpt,psclt,species_r,fnatm,skpatm,\
        colr,colpr,psclr,Nlev
   if inclcovar:
-    total_ll = -0.5 * (( dat - Fx(x0,y) ).T @ covar_inv @ ( dat - Fx(x0,y)) ) 
-    # L, lower = scipy.linalg.cho_factor(covar, lower=True)
-    # x_cholinv_x = dif.dot(scipy.linalg.cho_solve((L, lower), dif))
-    # total_ll = -0.5 * (( dat_upscaled - model_evaluation ).T @ covar_inv @ ( dat_upscaled - model_evaluation ) + (len(lam)*np.log(2*np.pi)) + np.log(np.linalg.det(covar)) )
+    total_ll = -0.5 * ((dat - Fx(x0,y)).T @ covar_inv @ (dat - Fx(x0,y))) 
     return total_ll
-    # return -0.5*x_cholinv_x
   else:
     return -0.5*np.sum((dat-Fx(x0,y))**2/err**2) 
 

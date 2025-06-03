@@ -10,7 +10,6 @@ from rfast_routines      import noise
 from rfast_routines      import inputs
 from scipy.ndimage import gaussian_filter
 import george
-from george import kernels
 
 # get input script filename
 if len(sys.argv) >= 2:
@@ -65,31 +64,25 @@ else: # otherwise snr0 is bandpass dependent
       err[ilam] = 1/snr0[i]
 
 # EDIT
-def gen_gp(wl_channel, amp, length, uncorr_noise):    
-    squared_exp_kernel = amp * george.kernels.ExpSquaredKernel(length)  # Removing amplitude squared: I think this is right?! just amplitude is my error bar, not squared...
+def gen_gp(wl_channel, amp, length):    
+    squared_exp_kernel = amp * george.kernels.ExpSquaredKernel(length)
     squared_exp_gp = george.GP(kernel=squared_exp_kernel)
-    squared_exp_gp.compute(wl_channel, 0)  # error_bar "added in quadrature" to diagonal of covariance matrix doesn't work!
+    squared_exp_gp.compute(wl_channel, 0)  # 0 because white noise added in quadrature to diagonal doesn't work with george
     return squared_exp_gp
 
 # generate faux spectrum, with random noise if requested
-
 data = np.copy(F2)
 
-err_scaled = err * 1e10 # scaling up
-F2_scaled = F2 * 1e10 # scaling up
-
 if correlated:
-  correlated_error = np.copy(F2)
-  if not rnd:
-    uncorr_noise = 0
-  else:
-    uncorr_noise = err[0]
+  err_scaled = err * 1e10 # scaling up to compute GP
+  F2_scaled = F2 * 1e10
+  correlated_error = np.copy(F2) # instantiate array of correct length
 
-  uv = np.array(lam[(lam >= lams[0]) & (lam <= lams[1])])
+  uv = np.array(lam[(lam >= lams[0]) & (lam <= lams[1])]) # wavelength arrays
   vis = np.array(lam[(lam > lams[1]) & (lam <= lams[2])])
   nir = np.array(lam[lam > lams[2]])
 
-  y_noise_uv = np.copy(uv)
+  y_noise_uv = np.copy(uv) # instantiate array of correct length
   y_noise_vis = np.copy(vis)
   y_noise_nir = np.copy(nir)
 
@@ -97,67 +90,55 @@ if correlated:
   flux_uv = np.array(F2_scaled[(lam >= lams[0]) & (lam <= lams[1])])
   for k in range(0,len(uv)):
     y_noise_uv[k]  = np.random.normal(flux_uv[k], err_scaled[k], 1)
-
-  num_measurements = len(uv)
-  gp = gen_gp(uv, arho, sigmarho, uncorr_noise * 1e10)
-  y_sqexp = gp.sample(num_measurements)
-  correlated_error[0:6] = y_sqexp / 1e10  # scaling down
+  gp = gen_gp(uv, arho, sigmarho)
+  y_sqexp = gp.sample(uv)
+  correlated_error[0:6] = y_sqexp / 1e10  # scaling back down
   y_correlated_uv = y_noise_uv + y_sqexp
-  # If < 100% correlated: make sure the amplitudes are right for everything
 
   # Vis:
   flux_vis = np.array(F2_scaled[(lam > lams[1]) & (lam <= lams[2])])
-  num_measurements = len(vis)
-  
   for k in range(0,len(vis)):
     y_noise_vis[k]  = np.random.normal(flux_vis[k], err_scaled[k], 1)
-
-  gp = gen_gp(vis, arho, sigmarho, uncorr_noise * 1e10)
-  y_sqexp = gp.sample(num_measurements)
-  correlated_error[(lam > lams[1]) & (lam <= lams[2])] = y_sqexp / 1e10  # scaling down
+  gp = gen_gp(vis, arho, sigmarho)
+  y_sqexp = gp.sample(vis)
+  correlated_error[(lam > lams[1]) & (lam <= lams[2])] = y_sqexp / 1e10  # scaling back down
   y_correlated_vis = y_noise_vis + y_sqexp
 
   # NIR: 
   flux_nir = np.array(F2_scaled[(lam > lams[2]) ])
-
   for k in range(0,len(nir)):
     y_noise_nir[k]  = np.random.normal(flux_nir[k], err_scaled[k], 1)  # ! doesn't work if err varies w/ wavelength
-  num_measurements = len(nir)
-  gp = gen_gp(nir, arho, sigmarho, uncorr_noise * 1e10)
-  y_sqexp = gp.sample(num_measurements)
+  gp = gen_gp(nir, arho, sigmarho)
+  y_sqexp = gp.sample(nir)
   correlated_error[(lam > lams[2]) ] = y_sqexp / 1e10
   y_correlated_nir = y_noise_nir + y_sqexp
 
   # Storing data:
-  data[(lam >= lams[0]) & (lam <= lams[1])] = y_correlated_uv / 1e10
+  data[(lam >= lams[0]) & (lam <= lams[1])] = y_correlated_uv / 1e10  # scaling back down
   data[(lam > lams[1]) & (lam <= lams[2])] = y_correlated_vis / 1e10
   data[(lam > lams[2]) ] = y_correlated_nir / 1e10
   
   if inclcovar:
-    gp_uv = gen_gp(uv, arho, sigmarho, uncorr_noise)
-    K_uv = gp_uv.kernel.get_value(uv[:, None])
-    K_uv /= 1e20
-    K_uv += np.diag(np.full(uv.shape, (err[0] ** 2)))
+    gp_uv = gen_gp(uv, arho, sigmarho)
+    K_uv = gp_uv.kernel.get_value(uv[:, None])  # covariance matrix
+    K_uv /= 1e20  # scaling back down
+    K_uv += np.diag(np.full(uv.shape, (err[0] ** 2)))  # adding white noise in quadrature
 
-    gp_vis = gen_gp(vis, arho, sigmarho, uncorr_noise)
+    gp_vis = gen_gp(vis, arho, sigmarho)
     K_vis = gp_vis.kernel.get_value(vis[:, None])
     K_vis /= 1e20
     K_vis += np.diag(np.full(vis.shape, (err[0]**2)))
 
-    gp_nir = gen_gp(nir, arho, sigmarho, uncorr_noise)
+    gp_nir = gen_gp(nir, arho, sigmarho)
     K_nir = gp_nir.kernel.get_value(nir[:, None])
     K_nir /= 1e20
     K_nir += np.diag(np.full(nir.shape, (err[0] ** 2)))
 
-    cov_matrix = np.zeros((len(lam), len(lam)))
+    cov_matrix = np.zeros((len(lam), len(lam)))  # generating one covariance matrix
     cov_matrix[:len(uv), :len(uv)] = K_uv
     cov_matrix[len(uv):len(uv)+len(vis), len(uv):len(uv)+len(vis)] = K_vis
     cov_matrix[len(uv)+len(vis):, len(uv)+len(vis):] = K_nir
-
     np.savetxt("covariance_matrix.txt", cov_matrix, fmt="%.9e", delimiter="\t", header="Covariance Matrix")
-    # np.savetxt("uv_matrix.txt", cov_matrix_uv, fmt="%.9e", delimiter="\t", header="UV Matrix")
-    # np.savetxt("vis_matrix.txt", cov_matrix_vis, fmt="%.9e", delimiter="\t", header="VIS Matrix")
-    # np.savetxt("nir_matrix.txt", cov_matrix_nir, fmt="%.9e", delimiter="\t", header="NIR Matrix")
 
   if (src == 'diff' or src == 'cmbn'):
     names = ['wavelength (um)','d wavelength (um)','albedo','flux ratio','data','uncertainty','correlated_error']
